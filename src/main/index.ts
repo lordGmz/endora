@@ -21,7 +21,7 @@ import type { HttpRequestSpec } from '@shared/http'
 import { sanitizeMockPatch, type MockEvent, type NewMockInput } from '@shared/mock'
 import { normalizeSettings, type Settings } from '@shared/settings'
 import { comboAccelerator, effectiveShortcuts, type ShortcutAction } from '@shared/shortcuts'
-import { activeTheme, THEMES } from '@shared/themes'
+import { activeTheme } from '@shared/themes'
 import { parseCurl } from './curl'
 import { executeRequest } from './executor'
 import { FileAllowlist } from './files'
@@ -49,6 +49,9 @@ const appWindows = new Set<number>()
 
 function createWindow(): void {
   const theme = activeTheme(settings.theme, nativeTheme.shouldUseDarkColors)
+  // Thème résolu (personnalisé et accent compris) et apparence, appliqués par l'interface avant son
+  // premier rendu.
+  const boot = JSON.stringify({ theme, appearance: settings.theme.appearance })
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -87,14 +90,14 @@ function createWindow(): void {
     if (url !== win.webContents.getURL()) event.preventDefault()
   })
 
-  // Le thème passe dans l'URL : l'interface l'applique avant son premier rendu, sans attendre le
-  // chargement de l'espace de travail (sinon éclair du thème par défaut au démarrage).
+  // Le thème passe dans l'URL : l'interface l'applique sans attendre le chargement de l'espace de
+  // travail (sinon éclair du thème par défaut au démarrage).
   if (process.env['ELECTRON_RENDERER_URL']) {
     const url = new URL(process.env['ELECTRON_RENDERER_URL'])
-    url.searchParams.set('theme', theme.id)
+    url.searchParams.set('theme', boot)
     void win.loadURL(url.toString())
   } else {
-    void win.loadFile(join(import.meta.dirname, '../renderer/index.html'), { query: { theme: theme.id } })
+    void win.loadFile(join(import.meta.dirname, '../renderer/index.html'), { query: { theme: boot } })
   }
 }
 
@@ -181,7 +184,7 @@ function buildMenu(): void {
 
 /** Thème natif (menus, dialogues) : suit le système ou le mode du thème choisi. */
 function applyNativeTheme(): void {
-  nativeTheme.themeSource = settings.theme.mode === 'system' ? 'system' : THEMES[settings.theme.fixed].dark ? 'dark' : 'light'
+  nativeTheme.themeSource = settings.theme.mode === 'system' ? 'system' : activeTheme(settings.theme, false).dark ? 'dark' : 'light'
 }
 
 /** Seules les fenêtres de l'interface peuvent appeler l'API de l'app (pas la fenêtre des scripts). */

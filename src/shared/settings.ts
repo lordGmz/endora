@@ -6,7 +6,7 @@
 
 import { DEFAULT_LOCALE, isLocale, type Locale } from './i18n'
 import type { ProtocolVersion } from './model'
-import { DEFAULT_THEME_DARK, DEFAULT_THEME_LIGHT, isThemeId, type ThemeId } from './themes'
+import { DEFAULT_APPEARANCE, DEFAULT_THEME_DARK, DEFAULT_THEME_LIGHT, findTheme, normalizeAppearance, normalizeCustomThemes, type ThemeSetting } from './themes'
 
 export type ResponseFormat = 'auto' | 'json' | 'xml' | 'html' | 'text'
 
@@ -28,13 +28,12 @@ export interface Settings {
     /** Délai maximal d'exécution d'un script (ms). */
     scriptTimeoutMs: number
   }
-  theme: {
-    /** `system` suit le mode clair/sombre du système avec les thèmes choisis pour chaque mode. */
-    mode: 'system' | 'fixed'
-    fixed: ThemeId
-    light: ThemeId
-    dark: ThemeId
-  }
+  /**
+   * `mode: system` suit le mode clair/sombre du système avec les thèmes choisis pour chaque mode.
+   * `fixed`/`light`/`dark` : identifiant d'un thème intégré ou personnalisé (`custom`) ;
+   * `appearance` : accent, onglets, densité et arrondis, appliqués à tous les thèmes.
+   */
+  theme: ThemeSetting
   /** Raccourcis modifiés par l'utilisateur ; une action absente garde ses raccourcis par défaut. */
   shortcuts: Record<string, string[]>
   /** Génération de code : langage préféré et options par langage (mémorisés, comme dans la référence). */
@@ -67,7 +66,7 @@ export const DEFAULT_SETTINGS: Settings = {
     variableAutocomplete: true,
     scriptTimeoutMs: 30_000
   },
-  theme: { mode: 'system', fixed: DEFAULT_THEME_DARK, light: DEFAULT_THEME_LIGHT, dark: DEFAULT_THEME_DARK },
+  theme: { mode: 'system', fixed: DEFAULT_THEME_DARK, light: DEFAULT_THEME_LIGHT, dark: DEFAULT_THEME_DARK, custom: [], appearance: DEFAULT_APPEARANCE },
   shortcuts: {},
   codegen: { language: 'curl', variant: 'cURL', resolveVariables: true, options: {} },
   updates: { autoCheck: true, autoInstall: true, source: 'lix033/endora' }
@@ -97,7 +96,9 @@ export function normalizeSettings(input: unknown): Settings {
       if (Array.isArray(combos)) shortcuts[action] = combos.filter((c): c is string => typeof c === 'string' && c.length < 64).slice(0, 4)
     }
   }
-  const theme = (v: unknown, fallback: ThemeId): ThemeId => (isThemeId(v) ? v : fallback)
+  const custom = normalizeCustomThemes(t['custom'])
+  // Un thème personnalisé supprimé (ou inconnu) revient au thème par défaut.
+  const theme = (v: unknown, fallback: string): string => (typeof v === 'string' && findTheme(v, custom) ? v : fallback)
   return {
     general: {
       language: isLocale(g['language']) ? g['language'] : d.general.language,
@@ -116,7 +117,9 @@ export function normalizeSettings(input: unknown): Settings {
       mode: oneOf(t['mode'], ['system', 'fixed'] as const, d.theme.mode),
       fixed: theme(t['fixed'], d.theme.fixed),
       light: theme(t['light'], d.theme.light),
-      dark: theme(t['dark'], d.theme.dark)
+      dark: theme(t['dark'], d.theme.dark),
+      custom,
+      appearance: normalizeAppearance(t['appearance'])
     },
     shortcuts,
     codegen: {

@@ -7,6 +7,22 @@ release (voir [docs/PUBLICATION.md](docs/PUBLICATION.md)).
 
 ## [Non publié]
 
+### Added
+
+- **Customizable appearance** (Settings › Themes), applied live to every theme:
+  - **Accent color**: eight presets or any custom color, used for buttons, links, selection and
+    variables; the text on the accent switches between light and dark to stay readable.
+  - **Active tab color**: its own color for the active tab and sub-tab, or the same as the accent.
+  - **Tab style**: Line (previous look), Filled or Pills, for the tab bar and the sub-tabs
+    (Params, Body…).
+  - **Density**: Compact, Normal or Comfortable spacing for tabs, fields and buttons.
+  - **Corner radius**: from square (0 px) to rounded (12 px).
+- **Custom themes**: create a theme from the current one and change any of its 20 colors
+  (interface, status, code and variables) with a live preview; rename it, mark it as light or dark
+  so it can be used with system sync, and delete it. Themes can be exported to a `.json` file and
+  imported back, to share them or move them to another machine.
+- A custom theme is applied as soon as the window opens, without a flash of the default theme.
+
 ### Security
 
 - **Local files protected**: a request can now only send a file that was chosen in Endora's file

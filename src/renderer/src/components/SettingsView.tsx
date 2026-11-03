@@ -14,13 +14,13 @@ import {
   type ShortcutAction,
   type ShortcutGroup
 } from '@shared/shortcuts'
-import { THEME_IDS, THEMES, type ThemeId } from '@shared/themes'
 import { shortcutCapture } from '../shortcuts'
 import { notifyUpdate } from '../stores/notifications'
 import { useUpdater } from '../stores/updater'
 import { isMac, useSettings } from '../stores/settings'
 import { useTabs, type Tab } from '../stores/tabs'
 import { confirmDialog, toast } from '../stores/ui'
+import { ThemeSettings } from './ThemeSettings'
 
 const SECTIONS: Array<{ id: SettingsSection; label: MessageKey }> = [
   { id: 'general', label: 'settings.general' },
@@ -162,73 +162,6 @@ function GeneralSettings() {
           {t('settings.resetGeneral')}
         </button>
       </p>
-    </>
-  )
-}
-
-// --- Thèmes ------------------------------------------------------------------------------------
-
-function ThemeCard({ id, selected, onSelect }: { id: ThemeId; selected: boolean; onSelect: () => void }) {
-  const theme = THEMES[id]
-  const c = theme.colors
-  return (
-    <button className={`theme-card ${selected ? 'selected' : ''}`} onClick={onSelect} aria-pressed={selected}>
-      <div className="theme-swatch" style={{ background: c.bg, borderColor: c.border }}>
-        <div style={{ background: c.bg2, borderRight: `1px solid ${c.border}` }} className="sw-side" />
-        <div className="sw-main">
-          <span style={{ background: c.accent }} />
-          <span style={{ background: c.ok }} />
-          <span style={{ background: c.warn }} />
-          <span style={{ background: c.fail }} />
-          <code style={{ color: c.string }}>"ok"</code>
-          <code style={{ color: c.keyword }}>pm</code>
-        </div>
-      </div>
-      <span>{t(`theme.${id}`)}</span>
-    </button>
-  )
-}
-
-function ThemeSettings() {
-  const theme = useSettings((s) => s.settings.theme)
-  const systemDark = useSettings((s) => s.systemDark)
-  const update = useSettings((s) => s.update)
-  const set = (patch: Partial<Settings['theme']>) => update((s) => ({ ...s, theme: { ...s.theme, ...patch } }))
-  const darks = THEME_IDS.filter((id) => THEMES[id].dark)
-  const lights = THEME_IDS.filter((id) => !THEMES[id].dark)
-
-  return (
-    <>
-      <h3>{t('settings.theme')}</h3>
-      <Toggle
-        label={t('settings.syncSystem')}
-        hint={t('settings.syncSystemHint', { dark: systemDark ? 'yes' : 'no' })}
-        checked={theme.mode === 'system'}
-        onChange={(v) => set({ mode: v ? 'system' : 'fixed' })}
-      />
-      {theme.mode === 'system' ? (
-        <>
-          <h4>{t('settings.lightTheme')}</h4>
-          <div className="theme-grid">
-            {lights.map((id) => (
-              <ThemeCard key={id} id={id} selected={theme.light === id} onSelect={() => set({ light: id })} />
-            ))}
-          </div>
-          <h4>{t('settings.darkTheme')}</h4>
-          <div className="theme-grid">
-            {darks.map((id) => (
-              <ThemeCard key={id} id={id} selected={theme.dark === id} onSelect={() => set({ dark: id })} />
-            ))}
-          </div>
-        </>
-      ) : (
-        <div className="theme-grid">
-          {THEME_IDS.map((id) => (
-            <ThemeCard key={id} id={id} selected={theme.fixed === id} onSelect={() => set({ fixed: id })} />
-          ))}
-        </div>
-      )}
-      <p className="muted small">{t('settings.themesNote')}</p>
     </>
   )
 }
