@@ -8,8 +8,9 @@ import { t } from '@shared/i18n'
 import type { HttpResponseResult } from '@shared/http'
 import type { ResponseFormat } from '@shared/settings'
 import type { TestResult } from '@shared/scripting/types'
+import { comboLabel, effectiveShortcuts } from '@shared/shortcuts'
 import { editorTheme } from '../editor'
-import { useSettings } from '../stores/settings'
+import { isMac, useSettings } from '../stores/settings'
 import { memoryKey, objectVersion, useScrollMemory, useTabState } from '../stores/tabui'
 import type { Tab } from '../stores/tabs'
 import { toast } from '../stores/ui'
@@ -42,6 +43,33 @@ export function kindOf(contentType: string | null, setting: ResponseFormat): Kin
   return 'text'
 }
 
+/** Avant le premier envoi : rappel des raccourcis (personnalisés le cas échéant). */
+function EmptyResponse() {
+  const overrides = useSettings((s) => s.settings.shortcuts)
+  const shortcuts = effectiveShortcuts(overrides)
+  const hints: [string, string | undefined][] = [
+    [t('res.hintSend'), shortcuts.send[0]],
+    [t('res.hintSave'), shortcuts.save[0]],
+    [t('res.hintUrl'), shortcuts.focusUrl[0]]
+  ]
+  return (
+    <section className="response empty">
+      <span>{t('res.empty')}</span>
+      <div className="empty-hints">
+        {hints
+          .filter((h): h is [string, string] => !!h[1])
+          .map(([label, combo]) => [
+            <span key={`${label}-k`} className="kbd">
+              {comboLabel(combo, isMac)}
+            </span>,
+            <span key={label}>{label}</span>
+          ])}
+      </div>
+      <span className="muted small">{t('res.hintCurl')}</span>
+    </section>
+  )
+}
+
 export function ResponsePanel({ tab }: { tab: Tab }) {
   const { result, sending, outcome } = tab
 
@@ -58,7 +86,7 @@ export function ResponsePanel({ tab }: { tab: Tab }) {
   if (outcome?.skipped) {
     return <section className="response empty">{t('res.skipped')}</section>
   }
-  if (!result) return <section className="response empty">{t('res.empty')}</section>
+  if (!result) return <EmptyResponse />
   if (!result.ok) {
     return (
       <section className="response empty error">
@@ -187,11 +215,16 @@ function ResponseView({ tab, result, tests, testError }: { tab: Tab; result: Htt
                   pretty: t('res.pretty'),
                   raw: t('res.raw'),
                   preview: t('res.preview'),
-                  headers: t('res.headers', { count: result.headers.length }),
-                  tests: counted > 0 || testError ? t('res.testsCount', { passed, total: counted }) : t('res.tests')
+                  headers: t('res.headers'),
+                  tests: t('res.tests')
                 }[v]
               }
-              {v === 'tests' && (testError || passed < counted) && <span className="dot fail-dot" />}
+              {v === 'headers' && <span className="badge">{result.headers.length}</span>}
+              {v === 'tests' && (counted > 0 || testError) && (
+                <span className={`badge ${testError || passed < counted ? 'fail-badge' : ''}`}>
+                  {passed}/{counted}
+                </span>
+              )}
             </button>
           ))}
         </nav>
@@ -227,7 +260,7 @@ function ResponseView({ tab, result, tests, testError }: { tab: Tab; result: Htt
           (kind === 'image' ? (
             <img className="preview-img" src={`data:${result.contentType};base64,${result.bodyBase64}`} alt={t('res.previewAlt')} />
           ) : (
-            <iframe className="preview" sandbox="" srcDoc={text} title={t('res.previewAlt')} />
+            <iframe className="response-preview" sandbox="" srcDoc={text} title={t('res.previewAlt')} />
           ))}
         {(view === 'pretty' || view === 'raw') &&
           (kind === 'image' ? (

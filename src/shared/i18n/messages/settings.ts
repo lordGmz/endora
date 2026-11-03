@@ -144,6 +144,7 @@ export const en = {
   'shortcut.import': 'Import',
   'shortcut.openSettings': 'Settings',
   'shortcut.toggleConsole': 'Toggle console',
+  'shortcut.commandPalette': 'Search and commands',
 
   'update.title': 'Update',
   'update.upToDate': 'You are using the latest version.',
@@ -319,6 +320,7 @@ export const fr: Translation<typeof en> = {
   'shortcut.import': 'Importer',
   'shortcut.openSettings': 'Paramètres',
   'shortcut.toggleConsole': 'Afficher/masquer la console',
+  'shortcut.commandPalette': 'Recherche et commandes',
 
   'update.title': 'Mises à jour',
   'update.upToDate': 'Vous utilisez la dernière version.',

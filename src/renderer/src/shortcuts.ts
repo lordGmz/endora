@@ -41,19 +41,64 @@ function readSizes(): PaneSizes {
   }
 }
 
+export type SidebarView = 'collections' | 'environments' | 'history'
+
+/** Vues qui ont leur propre menu : affichées en pleine largeur, sans la barre latérale. */
+export const FULL_WIDTH_VIEWS: ReadonlySet<string> = new Set(['settings', 'mocks'])
+
+/** Barre latérale réellement affichée pour l'onglet actif. */
+export function useSidebarShown(): boolean {
+  const visible = useLayout((s) => s.sidebarVisible)
+  const fullWidth = useTabs((s) => FULL_WIDTH_VIEWS.has(s.tabs.find((x) => x.id === s.activeId)?.view?.kind ?? ''))
+  return visible && !fullWidth
+}
+
+/** Largeur sous laquelle la barre latérale se replie d'elle-même (elle revient au-delà). */
+export const NARROW_WINDOW = 1000
+
 interface LayoutState extends PaneSizes {
   sidebarVisible: boolean
+  sidebarView: SidebarView
+  /** Barre latérale masquée par le repli automatique (et non par l'utilisateur). */
+  autoCollapsed: boolean
   codePanel: boolean
+  /** Palette de commandes (⌘K) ouverte. */
+  palette: boolean
+  setPalette: (open: boolean) => void
   toggleSidebar: () => void
+  /** Barre d'activité : affiche cette vue, ou masque la barre latérale si elle est déjà affichée. */
+  showSidebarView: (view: SidebarView) => void
+  setNarrow: (narrow: boolean) => void
   toggleCodePanel: () => void
   resize: (patch: Partial<PaneSizes>) => void
 }
 
 export const useLayout = create<LayoutState>((set, get) => ({
   sidebarVisible: true,
+  sidebarView: 'collections',
+  autoCollapsed: false,
   codePanel: false,
+  palette: false,
+  setPalette: (palette) => set({ palette }),
   ...readSizes(),
-  toggleSidebar: () => set({ sidebarVisible: !get().sidebarVisible }),
+  toggleSidebar: () => set({ sidebarVisible: !get().sidebarVisible, autoCollapsed: false }),
+  showSidebarView: (view) => {
+    const { sidebarVisible, sidebarView } = get()
+    // Depuis une vue pleine largeur, on revient au dernier onglet de travail (ou à un nouveau).
+    const tabs = useTabs.getState()
+    if (FULL_WIDTH_VIEWS.has(tabs.tabs.find((x) => x.id === tabs.activeId)?.view?.kind ?? '')) {
+      const back = [...tabs.tabs].reverse().find((x) => !FULL_WIDTH_VIEWS.has(x.view?.kind ?? ''))
+      if (back) tabs.activate(back.id)
+      else tabs.openNew()
+      set({ sidebarVisible: true, sidebarView: view, autoCollapsed: false })
+    } else if (sidebarVisible && sidebarView === view) set({ sidebarVisible: false, autoCollapsed: false })
+    else set({ sidebarVisible: true, sidebarView: view, autoCollapsed: false })
+  },
+  setNarrow: (narrow) => {
+    const { sidebarVisible, autoCollapsed } = get()
+    if (narrow && sidebarVisible) set({ sidebarVisible: false, autoCollapsed: true })
+    else if (!narrow && autoCollapsed) set({ sidebarVisible: true, autoCollapsed: false })
+  },
   toggleCodePanel: () => set({ codePanel: !get().codePanel }),
   resize: (patch) => set(patch)
 }))
@@ -148,9 +193,14 @@ export function dispatch(action: ShortcutAction): void {
     case 'toggleSidebar':
       useLayout.getState().toggleSidebar()
       break
-    case 'searchSidebar':
-      if (!useLayout.getState().sidebarVisible) useLayout.getState().toggleSidebar()
+    case 'searchSidebar': {
+      const layout = useLayout.getState()
+      if (!layout.sidebarVisible || FULL_WIDTH_VIEWS.has(active?.view?.kind ?? '')) layout.showSidebarView(layout.sidebarView)
       requestAnimationFrame(() => sidebarSearchRef.current?.focus())
+      break
+    }
+    case 'commandPalette':
+      useLayout.getState().setPalette(!useLayout.getState().palette)
       break
     case 'import':
       openImportDialog()

@@ -17,6 +17,7 @@ export const en = {
   'menu.previousTab': 'Previous Tab',
   'menu.sidebar': 'Sidebar',
   'menu.console': 'Console',
+  'menu.commandPalette': 'Search and Commands…',
 
   'dialog.import': 'Import',
   'dialog.importFilter': 'Collections, environments and text',
@@ -111,6 +112,7 @@ export const fr: Translation<typeof en> = {
   'menu.previousTab': 'Onglet précédent',
   'menu.sidebar': 'Barre latérale',
   'menu.console': 'Console',
+  'menu.commandPalette': 'Recherche et commandes…',
 
   'dialog.import': 'Importer',
   'dialog.importFilter': 'Collections, environnements et textes',

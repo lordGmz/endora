@@ -7,6 +7,7 @@ import { useTabs } from '../stores/tabs'
 import { confirmDialog } from '../stores/ui'
 import { openMenu } from './ContextMenu'
 import { exportEnvironment } from './EntityViews'
+import { EyeIcon } from './icons'
 import { useScopes } from './VarInput'
 
 /** Barre latérale : globales et environnements. */
@@ -119,8 +120,8 @@ export function EnvironmentSelector() {
           </option>
         ))}
       </select>
-      <button className={`ghost peek-btn ${peek ? 'on' : ''}`} onClick={() => setPeek(!peek)} title={t('env.peek')}>
-        {'{ }'}
+      <button className={`ghost peek-btn ${peek ? 'on' : ''}`} onClick={() => setPeek(!peek)} title={t('env.peek')} aria-label={t('env.peek')} aria-expanded={peek}>
+        <EyeIcon />
       </button>
       {peek && (
         <div className="peek">

@@ -1,7 +1,9 @@
 import { useEffect, useRef, type CSSProperties } from 'react'
 import { setLocale, t } from '@shared/i18n'
 import logo from './assets/logo.svg'
+import { ActivityBar } from './components/ActivityBar'
 import { CodePanel } from './components/CodePanel'
+import { CommandPalette } from './components/CommandPalette'
 import { ConsolePanel } from './components/ConsolePanel'
 import { ContextMenuHost } from './components/ContextMenu'
 import { DialogHost, Toasts } from './components/Dialogs'
@@ -14,8 +16,9 @@ import { autoCheckUpdates, SettingsView } from './components/SettingsView'
 import { Sidebar } from './components/Sidebar'
 import { Splitter } from './components/Splitter'
 import { TabBar } from './components/TabBar'
+import { StatusBar } from './components/StatusBar'
 import { TopBar } from './components/TopBar'
-import { DEFAULT_SIZES, dispatch, installKeyboardShortcuts, useLayout } from './shortcuts'
+import { DEFAULT_SIZES, dispatch, installKeyboardShortcuts, NARROW_WINDOW, useLayout, useSidebarShown } from './shortcuts'
 import { useConsole } from './stores/console'
 import { useEnvironments } from './stores/environments'
 import { useSettings } from './stores/settings'
@@ -48,6 +51,9 @@ function initWorkspace(): void {
 }
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v))
+
+/** Largeur de la barre d'activité (`--activity-w`), à retirer de la position du séparateur. */
+const ACTIVITY_WIDTH = 48
 
 function RequestEditor({ tab }: { tab: Tab }) {
   const codePanel = useLayout((s) => s.codePanel)
@@ -112,7 +118,7 @@ function TabContent({ tab }: { tab: Tab }) {
 export function App() {
   const loaded = useWorkspace((s) => s.loaded)
   const tab = useTabs((s) => s.tabs.find((t) => t.id === s.activeId) ?? null)
-  const sidebarVisible = useLayout((s) => s.sidebarVisible)
+  const sidebarVisible = useSidebarShown()
   const sidebarWidth = useLayout((s) => s.sidebarWidth)
   const consoleOpen = useConsole((s) => s.open)
   // Langue appliquée avant le rendu des enfants ; l'arbre est remonté quand elle change.
@@ -127,18 +133,27 @@ export function App() {
   useEffect(() => window.endora.onMenuAction(dispatch), [])
   useEffect(() => startMockEvents(), [])
   useEffect(() => startUpdaterEvents(), [])
+  // Fenêtre étroite : la barre latérale se replie, puis revient quand la place le permet.
+  useEffect(() => {
+    const narrow = window.matchMedia(`(max-width: ${NARROW_WINDOW - 1}px)`)
+    const apply = () => useLayout.getState().setNarrow(narrow.matches)
+    apply()
+    narrow.addEventListener('change', apply)
+    return () => narrow.removeEventListener('change', apply)
+  }, [])
 
   return (
     <div className="shell" key={language}>
       <TopBar />
       <div className={`app ${sidebarVisible ? '' : 'no-sidebar'}`} style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties}>
+      <ActivityBar />
       {sidebarVisible && <Sidebar />}
       {sidebarVisible && (
         <Splitter
           axis="x"
           className="sidebar-split"
           label={t('app.resizeSidebar')}
-          onDrag={(x) => useLayout.getState().resize({ sidebarWidth: clamp(x, 180, Math.min(600, window.innerWidth * 0.5)) })}
+          onDrag={(x) => useLayout.getState().resize({ sidebarWidth: clamp(x - ACTIVITY_WIDTH, 180, Math.min(600, window.innerWidth * 0.5)) })}
           onReset={() => useLayout.getState().resize({ sidebarWidth: DEFAULT_SIZES.sidebarWidth })}
         />
       )}
@@ -160,17 +175,10 @@ export function App() {
           </div>
         )}
         {consoleOpen && <ConsolePanel />}
-        <footer className="statusbar">
-          <button className="ghost small" onClick={() => useLayout.getState().toggleSidebar()}>
-            {sidebarVisible ? t('app.hideSidebar') : t('app.showSidebar')}
-          </button>
-          <span className="spacer" />
-          <button className={`ghost small ${consoleOpen ? 'on' : ''}`} onClick={() => useConsole.getState().toggle()}>
-            {t('app.console')}
-          </button>
-        </footer>
+        <StatusBar />
       </main>
       </div>
+      <CommandPalette />
       <DialogHost />
       <ContextMenuHost />
       <Toasts />

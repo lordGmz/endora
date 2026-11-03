@@ -5,7 +5,6 @@ import { useEnvironments } from '../stores/environments'
 import { useWorkspace } from '../stores/workspace'
 import { canRename, isDirty, tabTitle, useTabs } from '../stores/tabs'
 import { openMenu } from './ContextMenu'
-import { EnvironmentSelector } from './Environments'
 import { RenameInput } from './RenameInput'
 import { horizontalWheel } from './Splitter'
 
@@ -166,8 +165,6 @@ export function TabBar() {
       <button className="ghost tab-new" onClick={() => actions.openNew()} title={t('tabs.new')} aria-label={t('tabs.new')}>
         +
       </button>
-      <div className="tabbar-spacer" />
-      <EnvironmentSelector />
     </div>
   )
 }

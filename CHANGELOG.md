@@ -22,6 +22,25 @@ release (voir [docs/PUBLICATION.md](docs/PUBLICATION.md)).
   so it can be used with system sync, and delete it. Themes can be exported to a `.json` file and
   imported back, to share them or move them to another machine.
 - A custom theme is applied as soon as the window opens, without a flash of the default theme.
+- **Activity bar** on the left edge: Collections, Environments and History open the matching
+  side panel (clicking the active one hides it), followed by mock servers and, at the bottom,
+  Settings. A green dot shows when a mock server is running.
+- **Status bar**: sidebar toggle, active environment (opens it, or the environment list when none
+  is active), running mock servers, and the console with a red badge counting errors. Tooltips show
+  the keyboard shortcuts.
+- **Narrow windows**: below 1000 px the side panel folds away by itself and comes back when the
+  window is widened again, unless it was hidden on purpose.
+- **Search and commands** (⌘K / Ctrl+K, or the search box in the top bar): find any request by
+  name, URL, method or folder, open or run a collection, switch environment, and run common
+  commands (new request, import, console, themes, shortcuts…) from the keyboard. Accents and word
+  order don't matter. The shortcut can be changed in Settings › Shortcuts and is also in the View
+  menu.
+- **Request location**: a breadcrumb above the URL bar shows where the request lives
+  (collection › folders › name); the collection and folders open in one click, and a double click
+  on the name renames the request. Unsaved requests say they are not in a collection yet.
+- **Response placeholder**: before the first send, the response pane lists the shortcuts to send,
+  save and reach the URL bar (custom shortcuts included) and reminds that a cURL command can be
+  pasted into the URL bar.
 
 ### Security
 
@@ -50,6 +69,20 @@ release (voir [docs/PUBLICATION.md](docs/PUBLICATION.md)).
 
 ### Changed
 
+- **Request and response tabs**: counters use the same badge everywhere (Params, Headers, Tests
+  with passed/total, red when a test fails); the Authorization tab shows "inherited" when the
+  request uses its parent's authorization; the request "Settings" tab is now "Options", so it is no
+  longer confused with the application settings.
+- **Response status** is shown as a colored pill (green, orange or red).
+- **Top bar**: the environment selector and its variable preview (now an eye icon instead of
+  `{ }`) move from the tab bar to the top bar. The inactive "Workspaces" button is removed, and
+  Services and Settings moved to the activity bar.
+- **Settings and mock servers** use the full width: they have their own menu, so the side panel
+  steps aside while they are open and comes back with the next request tab (or when an activity bar
+  view is chosen).
+- **Side panel**: its header shows the name of the current view; the Collections / Environments /
+  History tabs are replaced by the activity bar.
+- An empty Params table explains how to add query parameters.
 - **File fields in imported collections**: a form-data file field coming from an imported
   collection, or saved before this version, must be selected again; the error message says so.
 - **Public mock server**: enabling public access now asks for confirmation, and a warning stays
@@ -58,6 +91,11 @@ release (voir [docs/PUBLICATION.md](docs/PUBLICATION.md)).
   secrets are only obfuscated and explains how to fix it.
 - Collection files on disk now contain their secrets encrypted, so other tools can no longer read
   them as is; exporting from Endora still produces plain text.
+
+### Fixed
+
+- The preview tab (in italics) was white and took the whole width of the tab bar, squeezing the
+  other tabs until their titles were cut ("New …", "Get …").
 
 ## [0.4.0] — 2026-10-16
 

@@ -166,6 +166,7 @@ function buildMenu(): void {
         item(t('menu.previousTab'), 'previousTab'),
         item(t('menu.sidebar'), 'toggleSidebar'),
         item(t('menu.console'), 'toggleConsole'),
+        item(t('menu.commandPalette'), 'commandPalette'),
         { type: 'separator' },
         { role: 'reload' },
         { role: 'toggleDevTools' },

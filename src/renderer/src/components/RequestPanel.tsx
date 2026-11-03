@@ -11,19 +11,20 @@ import { t } from '@shared/i18n'
 import { importRequest } from '@shared/collection-v21'
 import { generateCurl, isCurlCommand } from '@shared/curl'
 import { HTTP_METHODS } from '@shared/http'
-import type { BodyMode, ProtocolVersion, RawLanguage, RequestDraft } from '@shared/model'
+import { folderPath, type BodyMode, type ProtocolVersion, type RawLanguage, type RequestDraft } from '@shared/model'
 import { paramsFromUrl, urlWithParams } from '@shared/url'
 import { beautifyView, formatLanguage } from '../beautify'
 import { editorTheme, variableHighlight } from '../editor'
 import { tabChain } from '../stores/context'
 import { memoryKey, useScrollMemory, useTabState } from '../stores/tabui'
-import { isDirty, useTabs, type Tab } from '../stores/tabs'
+import { isDirty, tabTitle, useTabs, type Tab } from '../stores/tabs'
 import { toast } from '../stores/ui'
 import { useWorkspace } from '../stores/workspace'
 import { AuthEditor } from './AuthEditor'
 import { BeautifyButton } from './BeautifyButton'
 import { CodeEditor } from './CodeEditor'
 import { KeyValueEditor } from './KeyValueEditor'
+import { RenameInput } from './RenameInput'
 import { ScriptsEditor } from './ScriptsEditor'
 import { horizontalWheel } from './Splitter'
 import { useScopes, VarInput } from './VarInput'
@@ -44,6 +45,58 @@ const bodyExtensions = Object.fromEntries(
 export async function copyAsCurl(draft: RequestDraft): Promise<void> {
   await window.endora.writeClipboard(generateCurl(draft))
   toast(t('req.curlCopied'))
+}
+
+/** Emplacement de la requête : collection › dossiers › nom (double clic pour renommer). */
+function Breadcrumbs({ tab }: { tab: Tab }) {
+  const collections = useWorkspace((s) => s.collections)
+  const [renaming, setRenaming] = useState(false)
+  const source = tab.source
+  const collection = source?.kind === 'collection' ? collections.find((c) => c.id === source.collectionId) : undefined
+  const folders = collection && source?.kind === 'collection' ? (folderPath(collection.items, source.itemId) ?? []) : []
+  const { openView, rename } = useTabs.getState()
+  const title = tabTitle(tab)
+  const sep = <span className="crumb-sep">›</span>
+  return (
+    <nav className="crumbs" aria-label={t('req.breadcrumbs')}>
+      {collection && (
+        <>
+          <button type="button" className="crumb-link" onClick={() => openView({ kind: 'collection', collectionId: collection.id })}>
+            {collection.name}
+          </button>
+          {sep}
+          {folders.map((f) => (
+            <span key={f.id} className="crumb-folder">
+              <button type="button" className="crumb-link" onClick={() => openView({ kind: 'folder', collectionId: collection.id, folderId: f.id })}>
+                {f.name}
+              </button>{' '}
+              {sep}
+            </span>
+          ))}
+        </>
+      )}
+      {source?.kind === 'history' && (
+        <>
+          <span>{t('req.crumbHistory')}</span>
+          {sep}
+        </>
+      )}
+      {renaming ? (
+        <RenameInput
+          initial={title}
+          onDone={(name) => {
+            setRenaming(false)
+            if (name !== null) rename(tab.id, name)
+          }}
+        />
+      ) : (
+        <span className="crumb-current" title={t('req.renameHint')} onDoubleClick={() => setRenaming(true)}>
+          {title}
+        </span>
+      )}
+      {!source && <span className="crumb-note">— {t('req.crumbDraft')}</span>}
+    </nav>
+  )
 }
 
 export function RequestPanel({ tab }: { tab: Tab }) {
@@ -88,6 +141,7 @@ export function RequestPanel({ tab }: { tab: Tab }) {
 
   return (
     <section className="request">
+      <Breadcrumbs tab={tab} />
       <form
         className="urlbar"
         onSubmit={(e) => {
@@ -128,6 +182,7 @@ export function RequestPanel({ tab }: { tab: Tab }) {
         </button>
         <button className={section === 'auth' ? 'active' : ''} onClick={() => setSection('auth')}>
           {t('req.authorization')} {d.auth && d.auth.type !== 'noauth' && <span className="dot" />}
+          {!d.auth && inherited.auth && <span className="badge">{t('req.inherited')}</span>}
         </button>
         <button className={section === 'headers' ? 'active' : ''} onClick={() => setSection('headers')}>
           {t('req.headers')} {count(d.headers) > 0 && <span className="badge">{count(d.headers)}</span>}
@@ -145,7 +200,10 @@ export function RequestPanel({ tab }: { tab: Tab }) {
 
       <div className="tab-body" ref={tabBodyRef}>
         {section === 'params' && (
-          <KeyValueEditor rows={d.params} scopes={scopes} onChange={(params) => edit((x) => ({ ...x, params, url: urlWithParams(x.url, params) }))} />
+          <>
+            <KeyValueEditor rows={d.params} scopes={scopes} onChange={(params) => edit((x) => ({ ...x, params, url: urlWithParams(x.url, params) }))} />
+            {d.params.length === 0 && <p className="empty-note">{t('req.noParams')}</p>}
+          </>
         )}
         {section === 'auth' && <AuthEditor auth={d.auth} allowInherit inherited={inherited} scopes={scopes} onChange={(auth) => edit((x) => ({ ...x, auth }))} />}
         {section === 'headers' && <KeyValueEditor rows={d.headers} scopes={scopes} onChange={(headers) => edit((x) => ({ ...x, headers }))} keyPlaceholder={t('req.headerKey')} />}

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { t } from '@shared/i18n'
-import { sidebarSearchRef } from '../shortcuts'
+import { sidebarSearchRef, useLayout } from '../shortcuts'
 import { useEnvironments } from '../stores/environments'
 import { useTabs } from '../stores/tabs'
 import { openImportDialog } from '../stores/ui'
@@ -10,33 +10,20 @@ import { CollectionsTree, newCollection, newLooseRequest } from './CollectionsTr
 import { EnvironmentsList } from './Environments'
 import { clearHistory, HistoryList } from './HistoryList'
 
-type View = 'collections' | 'environments' | 'history'
-
 export function Sidebar() {
-  const [view, setView] = useState<View>('collections')
+  const view = useLayout((s) => s.sidebarView)
   const [filter, setFilter] = useState('')
   const historyCount = useWorkspace((s) => s.history.length)
+  const title = { collections: t('sidebar.collections'), environments: t('sidebar.environments'), history: t('sidebar.history') }[view]
 
   return (
     <aside className="sidebar">
       <div className="sidebar-head">
+        <h2 className="sidebar-title">{title}</h2>
         <button className="small-btn" onClick={() => openImportDialog()} title={t('sidebar.importTitle')}>
           {t('common.import')}
         </button>
       </div>
-      <nav className="tabs sidebar-tabs">
-        {(
-          [
-            ['collections', t('sidebar.collections')],
-            ['environments', t('sidebar.environments')],
-            ['history', t('sidebar.history')]
-          ] as const
-        ).map(([id, label]) => (
-          <button key={id} className={view === id ? 'active' : ''} onClick={() => setView(id)}>
-            {label}
-          </button>
-        ))}
-      </nav>
       <div className="sidebar-tools">
         {view === 'collections' && (
           <button

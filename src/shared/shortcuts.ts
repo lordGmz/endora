@@ -32,6 +32,7 @@ export type ShortcutAction =
   | 'import'
   | 'openSettings'
   | 'toggleConsole'
+  | 'commandPalette'
 
 export type ShortcutGroup = 'tabs' | 'request' | 'interface'
 
@@ -63,7 +64,8 @@ export const SHORTCUTS: ShortcutDefinition[] = [
   { action: 'searchSidebar', group: 'interface', defaults: ['mod+f'] },
   { action: 'import', group: 'interface', defaults: ['mod+o'] },
   { action: 'openSettings', group: 'interface', defaults: ['mod+,'] },
-  { action: 'toggleConsole', group: 'interface', defaults: ['mod+alt+c'] }
+  { action: 'toggleConsole', group: 'interface', defaults: ['mod+alt+c'] },
+  { action: 'commandPalette', group: 'interface', defaults: ['mod+k'] }
 ]
 
 /** Libellé d'une action dans la langue de l'interface. */

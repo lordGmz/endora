@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { t } from '@shared/i18n'
 import logo from '../assets/logo.svg'
+import { comboLabel, effectiveShortcuts } from '@shared/shortcuts'
+import { useLayout } from '../shortcuts'
 import { useNotifications } from '../stores/notifications'
+import { isMac, useSettings } from '../stores/settings'
 import { useTabs } from '../stores/tabs'
-import { useMocks } from '../stores/mocks'
-import { BellIcon, GearIcon, ServicesIcon, WorkspaceIcon } from './icons'
+import { EnvironmentSelector } from './Environments'
+import { BellIcon, SearchIcon } from './icons'
 
-type Panel = 'workspace' | 'notifications' | null
+type Panel = 'notifications' | null
 
 /** Panneau déroulant ancré sous son bouton ; se ferme au clic extérieur ou avec Échap. */
 function Popover({ onClose, children, className = '' }: { onClose: () => void; children: ReactNode; className?: string }) {
@@ -85,10 +88,22 @@ function NotificationsPanel({ onClose }: { onClose: () => void }) {
   )
 }
 
+/** Ouvre la palette de commandes ; affiche son raccourci. */
+function SearchButton() {
+  const overrides = useSettings((s) => s.settings.shortcuts)
+  const combo = effectiveShortcuts(overrides).commandPalette[0]
+  return (
+    <button className="topbar-search" onClick={() => useLayout.getState().setPalette(true)} aria-label={t('palette.title')}>
+      <SearchIcon />
+      <span className="topbar-search-label">{t('palette.search')}</span>
+      {combo && <span className="kbd">{comboLabel(combo, isMac)}</span>}
+    </button>
+  )
+}
+
 export function TopBar() {
   const [panel, setPanel] = useState<Panel>(null)
   const unread = useNotifications((s) => s.items.filter((i) => !i.read).length)
-  const runningMocks = useMocks((s) => s.mocks.filter((m) => m.running).length)
   const close = () => setPanel(null)
   const toggle = (p: Exclude<Panel, null>) => {
     setPanel((cur) => (cur === p ? null : p))
@@ -101,34 +116,10 @@ export function TopBar() {
         <img src={logo} alt="" />
         Endora
       </div>
-      <span className="spacer" />
-      <div className="topbar-item">
-        <button
-          className={`topbar-btn ${panel === 'workspace' ? 'on' : ''}`}
-          onClick={() => toggle('workspace')}
-          title={t('top.workspaces')}
-          aria-label={t('top.workspaces')}
-          aria-haspopup="dialog"
-          aria-expanded={panel === 'workspace'}
-        >
-          <WorkspaceIcon />
-        </button>
-        {panel === 'workspace' && (
-          <Popover onClose={close}>
-            <div className="popover-head">{t('top.workspaces')}</div>
-            <p className="popover-empty muted">{t('top.workspacesSoon')}</p>
-          </Popover>
-        )}
+      <div className="topbar-center">
+        <SearchButton />
       </div>
-      <button
-        className="topbar-btn"
-        onClick={() => useTabs.getState().openView({ kind: 'mocks' })}
-        title={runningMocks > 0 ? t('top.servicesRunning', { count: runningMocks }) : t('top.servicesTitle')}
-        aria-label={t('top.services')}
-      >
-        <ServicesIcon />
-        {runningMocks > 0 && <span className="topbar-dot" />}
-      </button>
+      <EnvironmentSelector />
       <div className="topbar-item">
         <button
           className={`topbar-btn ${panel === 'notifications' ? 'on' : ''}`}
@@ -143,9 +134,6 @@ export function TopBar() {
         </button>
         {panel === 'notifications' && <NotificationsPanel onClose={close} />}
       </div>
-      <button className="topbar-btn" onClick={() => useTabs.getState().openSettings()} title={t('common.settings')} aria-label={t('common.settings')}>
-        <GearIcon />
-      </button>
     </header>
   )
 }
