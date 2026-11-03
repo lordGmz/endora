@@ -10,6 +10,7 @@ import { rawContentType, type HttpRequestSpec } from '@shared/http'
 import { resolveDeep } from '@shared/variables'
 import { signRequest } from './auth'
 import { draftToScriptRequest, scopesFrom, toScriptVars, toSpec } from './executor'
+import { DENY_ALL_FILES, type FilePolicy } from './files'
 import { prepareRequest } from './http'
 import { t } from '@shared/i18n'
 
@@ -55,7 +56,14 @@ function bodyDefinition(spec: HttpRequestSpec): Record<string, unknown> | undefi
   return undefined
 }
 
-export async function generateCode(input: ExecutionInput, language: unknown, variant: unknown, options: unknown, resolveVariables: unknown): Promise<CodegenResult> {
+export async function generateCode(
+  input: ExecutionInput,
+  language: unknown,
+  variant: unknown,
+  options: unknown,
+  resolveVariables: unknown,
+  files: FilePolicy = DENY_ALL_FILES
+): Promise<CodegenResult> {
   if (typeof language !== 'string' || typeof variant !== 'string' || EXCLUDED.has(language)) return { ok: false, message: t('codegen.unknown') }
   try {
     const { codegen, sdk } = await load()
@@ -73,7 +81,7 @@ export async function generateCode(input: ExecutionInput, language: unknown, var
 
     if (resolveVariables !== false) {
       // Requête réellement envoyée : en-têtes par défaut et signature d'auth comprises.
-      const prepared = await prepareRequest(spec)
+      const prepared = await prepareRequest(spec, files)
       if (prepared.ok) {
         let p = prepared.prepared
         const { auth } = effectiveAuth(input.draft.auth, input.chain.map((c) => ({ auth: c.auth, name: c.name, kind: c.kind })))

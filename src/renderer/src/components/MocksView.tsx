@@ -33,6 +33,21 @@ const SNIPPETS: Array<{ label: MessageKey; code: MessageKey }> = [
 
 const copy = (text: string, what: string) => void window.endora.writeClipboard(text).then(() => toast(t('common.copied', { what })))
 
+/** Accès public : joignable sans clé par tout le réseau local, confirmation explicite. */
+async function confirmPublic(): Promise<boolean> {
+  const choice = await confirmDialog(t('mocks.publicConfirmTitle'), t('mocks.publicConfirm'), [
+    { label: t('common.cancel'), value: 'cancel' },
+    { label: t('mocks.publicEnable'), value: 'public', variant: 'danger' }
+  ])
+  return choice === 'public'
+}
+
+/** Applique le choix d'accès public ; l'activation passe par la confirmation. */
+async function togglePublic(value: boolean, apply: (value: boolean) => void): Promise<void> {
+  if (value && !(await confirmPublic())) return
+  apply(value)
+}
+
 function StatusBadge({ mock }: { mock: MockState }) {
   if (mock.error) return <span className="mock-status error">{t('mocks.error')}</span>
   return <span className={`mock-status ${mock.running ? 'on' : ''}`}>{mock.running ? t('mocks.running') : t('mocks.stopped')}</span>
@@ -91,7 +106,7 @@ function NewMockForm({ onCreated }: { onCreated: (id: string) => void }) {
             label={t('mocks.publicAccess')}
             hint={t('mocks.publicHintNew', { header: MOCK_HEADERS.key })}
             checked={publicAccess}
-            onChange={setPublicAccess}
+            onChange={(v) => void togglePublic(v, setPublicAccess)}
           />
           <Toggle
             label={t('mocks.autoDeploy')}
@@ -305,6 +320,7 @@ function MockDetail({ tabId, mock }: { tabId: string; mock: MockState }) {
             </button>
           </div>
         )}
+        {config.publicAccess && <p className="warn-text small">{t('mocks.publicWarning')}</p>}
         {!config.publicAccess && (
           <div className="mock-url">
             <span className="muted small">{t('mocks.key', { header: MOCK_HEADERS.key })}</span>
@@ -328,7 +344,7 @@ function MockDetail({ tabId, mock }: { tabId: string; mock: MockState }) {
           label={t('mocks.publicAccess')}
           hint={t('mocks.publicHint', { header: MOCK_HEADERS.key })}
           checked={config.publicAccess}
-          onChange={(v) => set({ publicAccess: v })}
+          onChange={(v) => void togglePublic(v, (publicAccess) => set({ publicAccess }))}
         />
         <Toggle
           label={t('mocks.autoDeploy')}

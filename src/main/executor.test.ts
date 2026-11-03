@@ -1,4 +1,7 @@
+import { writeFile } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { createServer as createH2Server, type Http2Server } from 'node:http2'
 import type { AddressInfo } from 'node:net'
 import lodash from 'lodash'
@@ -201,5 +204,40 @@ describe('executeRequest : réglages HTTP', () => {
   it('respecte la taille maximale de réponse', async () => {
     const out = await executeRequest(input({ url: `${base}/big` }, { settings: { ...DEFAULT_SETTINGS.general, maxResponseSizeMb: 1 } }), runner)
     expect(out.result).toMatchObject({ ok: false, code: 'too_large' })
+  })
+})
+
+describe('executeRequest : fichiers locaux', () => {
+  const picked = join(tmpdir(), `endora-choisi-${process.pid}.txt`)
+  const secret = join(tmpdir(), `endora-secret-${process.pid}.txt`)
+  const allowed = (p: string) => p === picked || p === secret
+  const withFile = (path: string, scripts = emptyScripts()) =>
+    input({ method: 'POST', url: `${base}/f`, scripts, body: { ...emptyDraft().body, mode: 'formdata', formdata: [{ ...newRow('f', path), kind: 'file' }] } })
+
+  beforeAll(async () => {
+    await writeFile(picked, 'fichier-choisi')
+    await writeFile(secret, 'fichier-secret')
+  })
+
+  it('envoie le fichier de la requête quand il a été choisi', async () => {
+    expect(echo(await executeRequest(withFile(picked), runner, undefined, allowed)).body).toContain('fichier-choisi')
+  })
+
+  it('refuse un fichier non choisi (collection importée)', async () => {
+    const out = await executeRequest(withFile(picked), runner)
+    expect(out.result).toMatchObject({ ok: false, code: 'file' })
+  })
+
+  it('pm.sendRequest ne peut pas envoyer un autre fichier, même choisi', async () => {
+    const prerequest = `await pm.sendRequest({ url: '${base}/x', method: 'POST', body: { mode: 'formdata', formdata: [{ key: 'k', type: 'file', value: '${secret}' }] } })`
+    const out = await executeRequest(withFile(picked, { prerequest, test: '' }), runner, undefined, allowed)
+    expect(out.prerequestError?.message).toMatch(/fichier|file/i)
+    expect(out.result).toBeNull()
+  })
+
+  it('un script ne peut pas ajouter un fichier à la requête', async () => {
+    const prerequest = `pm.request.body.formdata.members.push({ key: 'vol', type: 'file', value: '${secret}' })`
+    const out = await executeRequest(withFile(picked, { prerequest, test: '' }), runner, undefined, allowed)
+    expect(out.result).toMatchObject({ ok: false, code: 'file' })
   })
 })

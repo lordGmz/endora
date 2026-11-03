@@ -24,6 +24,7 @@ import { comboAccelerator, effectiveShortcuts, type ShortcutAction } from '@shar
 import { activeTheme, THEMES } from '@shared/themes'
 import { parseCurl } from './curl'
 import { executeRequest } from './executor'
+import { FileAllowlist } from './files'
 import { executeHttp } from './http'
 import { AutoUpdate, type UpdaterLike } from './autoupdate'
 import { MockManager } from './mock'
@@ -42,6 +43,7 @@ let storage: WorkspaceStorage
 let sandbox: ScriptSandbox
 let mocks: MockManager
 let autoUpdate: AutoUpdate
+let allowedFiles: FileAllowlist
 let settings: Settings = normalizeSettings(null)
 const appWindows = new Set<number>()
 
@@ -195,7 +197,7 @@ function registerIpc(): void {
     const controller = new AbortController()
     inFlight.set(requestId, controller)
     try {
-      return await executeHttp(spec, controller.signal)
+      return await executeHttp(spec, controller.signal, {}, allowedFiles.policy)
     } finally {
       inFlight.delete(requestId)
     }
@@ -207,7 +209,7 @@ function registerIpc(): void {
     const controller = new AbortController()
     inFlight.set(input.requestId, controller)
     try {
-      return await executeRequest(input, (exec, send, timeout) => sandbox.run(exec, send, timeout), controller.signal)
+      return await executeRequest(input, (exec, send, timeout) => sandbox.run(exec, send, timeout), controller.signal, allowedFiles.policy)
     } finally {
       inFlight.delete(input.requestId)
     }
@@ -290,7 +292,10 @@ function registerIpc(): void {
     const win = BrowserWindow.fromWebContents(event.sender)
     const options: Electron.OpenDialogOptions = { title: t('dialog.chooseFile'), properties: ['openFile'] }
     const picked = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
-    return picked.canceled ? null : (picked.filePaths[0] ?? null)
+    const path = picked.canceled ? null : (picked.filePaths[0] ?? null)
+    // Seul un fichier choisi ici peut ensuite être lu et envoyé par une requête.
+    if (path) allowedFiles.allow(path)
+    return path
   })
 
   handle(IPC.clipboardWrite, (_event, text: unknown) => {
@@ -303,7 +308,7 @@ function registerIpc(): void {
   handle(IPC.codegenLanguages, () => codegenLanguages())
   handle(IPC.codegenOptions, (_event, language: unknown, variant: unknown) => codegenOptions(language, variant))
   handle(IPC.codegenGenerate, (_event, input: ExecutionInput, language: unknown, variant: unknown, options: unknown, resolve: unknown) =>
-    generateCode(input, language, variant, options, resolve)
+    generateCode(input, language, variant, options, resolve, allowedFiles.policy)
   )
   handle(IPC.updatesCheck, (_event, source: unknown) => checkForUpdates(typeof source === 'string' ? source : settings.updates.source, app.getVersion()))
   handle(IPC.openExternal, (_event, url: unknown) => {
@@ -341,7 +346,8 @@ function registerIpc(): void {
       chrome: process.versions.chrome,
       node: process.versions.node,
       platform: `${process.platform} ${process.arch}`,
-      secretsEncrypted: safeStorage.isEncryptionAvailable()
+      secretsEncrypted: safeStorage.isEncryptionAvailable() && !weakSecretStorage(),
+      secretsWeak: weakSecretStorage()
     })
   )
 }
@@ -370,6 +376,15 @@ async function loadUpdater(): Promise<UpdaterLike | null> {
   }
 }
 
+/**
+ * Linux sans trousseau (ni libsecret ni KWallet) : Electron retombe sur `basic_text`, une clé fixe
+ * qui masque les secrets sans les protéger. Le chiffreur reste utilisé (rien de pire que du clair,
+ * et les fichiers restent lisibles si un trousseau apparaît), mais l'interface le signale.
+ */
+function weakSecretStorage(): boolean {
+  return process.platform === 'linux' && safeStorage.isEncryptionAvailable() && safeStorage.getSelectedStorageBackend() === 'basic_text'
+}
+
 /** Chiffrement des secrets par le trousseau du système, quand il est disponible. */
 function systemCipher(): SecretCipher | null {
   if (!safeStorage.isEncryptionAvailable()) return null
@@ -383,6 +398,7 @@ void app.whenReady().then(async () => {
   storage = new WorkspaceStorage(join(app.getPath('userData'), 'workspace'), systemCipher())
   settings = await storage.readSettings()
   setLocale(settings.general.language)
+  allowedFiles = new FileAllowlist(await storage.loadAllowedFiles(), (files) => void storage.saveAllowedFiles(files))
   sandbox = new ScriptSandbox()
   mocks = new MockManager({
     readCollection: (id) => storage.readCollection(id),

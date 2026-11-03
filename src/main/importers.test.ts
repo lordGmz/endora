@@ -1,3 +1,5 @@
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_IMPORT_OPTIONS, type ImportConversion } from '@shared/api'
 import { importCollection } from '@shared/collection-v21'
@@ -54,6 +56,25 @@ paths:
     expect((await collectionOf('a.json', oas31, 'openapi31')).name).toBe('Neuf')
     const sw2 = JSON.stringify({ swagger: '2.0', info: { title: 'Ancien', version: '1' }, host: 'ex.com', basePath: '/api', paths: { '/a': { get: { responses: { 200: { description: 'ok' } } } } } })
     expect(summary(await collectionOf('s.json', sw2, 'swagger2'))[0]).toMatch(/^GET .*\/a$/)
+  })
+
+  it('RAML 0.8 : aucune inclusion résolue pendant l’import (pas de réseau ni de fichier)', async () => {
+    const hits: string[] = []
+    const server = createServer((req, res) => {
+      hits.push(req.url ?? '')
+      res.end('title: injecte')
+    })
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+    try {
+      for (const tag of [`!include  ${url}/a`, `!include\t${url}/b`, `!include ${url}/c`]) {
+        const r = await convertImport('x.raml', `#%RAML 0.8\ntitle: T\nbaseUri: http://ex.com\n/a:\n  description: ${tag}\n  get:\n`, opts)
+        expect(r.ok).toBe(true)
+      }
+      expect(hits).toEqual([])
+    } finally {
+      server.close()
+    }
   })
 
   it('RAML 1.0 et 0.8', async () => {

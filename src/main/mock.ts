@@ -1,7 +1,7 @@
 // Mock servers locaux : un serveur HTTP par mock, réponses tirées des exemples de la collection,
 // script de mock exécuté dans le sandbox. Voir @shared/mock pour le comportement de référence.
 
-import { randomBytes, randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { networkInterfaces } from 'node:os'
 import type { StorageResult } from '@shared/api'
@@ -348,7 +348,7 @@ export class MockManager {
       })
     }
 
-    if (!c.publicAccess && req.headers[MOCK_HEADERS.key] !== c.apiKey) {
+    if (!c.publicAccess && !sameKey(req.headers[MOCK_HEADERS.key], c.apiKey)) {
       return error(401, { error: t('mocks.err.private'), hint: t('mocks.err.privateHint', { header: MOCK_HEADERS.key }) })
     }
 
@@ -420,6 +420,14 @@ export class MockManager {
     this.logs.set(id, list)
     this.deps.emit({ type: 'log', entry })
   }
+}
+
+/** Clé d'un mock privé : comparaison en temps constant ; une clé attendue vide n'ouvre jamais l'accès. */
+export function sameKey(given: unknown, expected: string): boolean {
+  if (typeof given !== 'string' || expected === '') return false
+  const a = Buffer.from(given)
+  const b = Buffer.from(expected)
+  return a.length === b.length && timingSafeEqual(a, b)
 }
 
 function readBody(req: IncomingMessage): Promise<string> {

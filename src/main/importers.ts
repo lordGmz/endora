@@ -64,6 +64,13 @@ function loadYaml(text: string): unknown {
 const empty = (format: ImportFormat) => ({ ok: true as const, format, formatLabel: labels()[format], collections: [], environments: [], globals: [], requests: [] })
 const fail = (message: string): ImportConversion => ({ ok: false, message })
 
+/**
+ * Retire les balises `!include` d'un RAML 0.8 : le convertisseur ne neutralise que `!include x`
+ * (une seule espace) et son analyseur résoudrait les autres formes en lisant un fichier local ou en
+ * téléchargeant une URL pendant l'import. La cible reste dans le texte, comme valeur simple.
+ */
+export const withoutIncludes = (raml: string): string => raml.replace(/!include\b[ \t]*/g, '')
+
 function parseJson(text: string): unknown {
   try {
     return JSON.parse(text)
@@ -159,7 +166,7 @@ export async function convertImport(name: unknown, text: unknown, options: Impor
     if (isObject(yaml) && 'swaggerVersion' in yaml) return { ...empty('swagger1'), collections: await runConverter(await swagger1(), JSON.stringify(yaml), {}) }
 
     if (/^#%RAML\s+1\.0/.test(trimmed)) return { ...empty('raml10'), collections: await runConverter(await raml10(), trimmed, {}) }
-    if (/^#%RAML\s+0\.8/.test(trimmed)) return { ...empty('raml08'), collections: await runConverter(await raml08(), trimmed, {}) }
+    if (/^#%RAML\s+0\.8/.test(trimmed)) return { ...empty('raml08'), collections: await runConverter(await raml08(), withoutIncludes(trimmed), {}) }
 
     // 4. XML
     const wsdl = looksLikeWsdl(trimmed)

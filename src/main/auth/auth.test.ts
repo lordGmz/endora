@@ -261,3 +261,14 @@ describe('défis serveur', () => {
     expect(ntlmv2Response(Buffer.alloc(16), t2.challenge, Buffer.alloc(8), Buffer.alloc(8), t2.targetInfo).length).toBe(16 + 28 + t2.targetInfo.length + 4)
   })
 })
+
+describe('isSecretAuthParam', () => {
+  it('reconnaît mots de passe, secrets, jetons et clés privées, pas les identifiants', async () => {
+    const { isSecretAuthParam } = await import('@shared/auth')
+    expect(['password', 'token', 'clientSecret', 'accessToken', 'privateKey', 'value'].map((k) => isSecretAuthParam(k === 'value' ? 'apikey' : k === 'password' ? 'basic' : k === 'token' ? 'bearer' : k === 'privateKey' ? 'jwt' : 'oauth2', k))).toEqual([true, true, true, true, true, true])
+    expect(isSecretAuthParam('basic', 'username')).toBe(false)
+    expect(isSecretAuthParam('apikey', 'key')).toBe(false)
+    expect(isSecretAuthParam('oauth2', 'clientId')).toBe(false)
+    expect(isSecretAuthParam('inconnu', 'password')).toBe(false)
+  })
+})

@@ -20,6 +20,11 @@ export const en = {
   'mocks.publicAccess': 'Allow public access',
   'mocks.publicHintNew': (p) => `Reachable from the local network, without a key. Otherwise: this machine only, with the ${p['header']} header.`,
   'mocks.publicHint': (p) => `Reachable from the local network, without a key. Off: private mock server, this machine only, ${p['header']} header required.`,
+  'mocks.publicConfirmTitle': 'Allow public access?',
+  'mocks.publicConfirm':
+    'Anyone on your local network (office, café or hotel Wi-Fi…) will be able to call this mock server without a key and read its responses, including the examples of the collection and what its script returns. Only enable this on a network you trust.',
+  'mocks.publicEnable': 'Allow public access',
+  'mocks.publicWarning': 'Public access: reachable without a key by any device on your local network.',
   'mocks.autoDeploy': 'Auto-deploy changes',
   'mocks.autoDeployHintNew': 'Collection changes are served as soon as they are saved. Otherwise: “Deploy” button.',
   'mocks.autoDeployHint': 'Collection changes are served as soon as they are saved.',
@@ -114,6 +119,11 @@ export const fr: Translation<typeof en> = {
   'mocks.publicAccess': 'Autoriser l’accès public',
   'mocks.publicHintNew': (p) => `Joignable depuis le réseau local, sans clé. Sinon : cette machine uniquement, avec le header ${p['header']}.`,
   'mocks.publicHint': (p) => `Joignable depuis le réseau local, sans clé. Désactivé : mock privé, cette machine uniquement, header ${p['header']} obligatoire.`,
+  'mocks.publicConfirmTitle': 'Autoriser l’accès public ?',
+  'mocks.publicConfirm':
+    'Tout appareil de votre réseau local (Wi-Fi du bureau, d’un café, d’un hôtel…) pourra appeler ce mock server sans clé et lire ses réponses, y compris les exemples de la collection et ce que renvoie son script. N’activez cette option que sur un réseau de confiance.',
+  'mocks.publicEnable': 'Autoriser l’accès public',
+  'mocks.publicWarning': 'Accès public : joignable sans clé par tout appareil de votre réseau local.',
   'mocks.autoDeploy': 'Déployer automatiquement les modifications',
   'mocks.autoDeployHintNew': 'Les changements de la collection sont servis dès leur enregistrement. Sinon : bouton « Déployer ».',
   'mocks.autoDeployHint': 'Les changements de la collection sont servis dès leur enregistrement.',

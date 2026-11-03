@@ -235,6 +235,16 @@ export const authLabel = (type: AuthType): string => t(`auth.type.${type}`)
 
 export const isAuthType = (v: unknown): v is AuthType => typeof v === 'string' && AUTH_TYPES.some((x) => x.type === v)
 
+/** Jetons obtenus ou saisis, sensibles même quand le champ est affiché en clair. */
+const TOKEN_KEYS = new Set(['token', 'accessToken', 'refreshToken', 'privateKey'])
+
+/** Paramètres à chiffrer sur disque : champs « secret », clés privées et jetons, par type d'auth. */
+const SECRET_PARAMS = new Map(AUTH_TYPES.map((a) => [a.type as string, new Set(a.fields.filter((f) => f.kind === 'secret' || TOKEN_KEYS.has(f.key)).map((f) => f.key))]))
+
+export function isSecretAuthParam(type: string, key: string): boolean {
+  return SECRET_PARAMS.get(type)?.has(key) === true || (isAuthType(type) && TOKEN_KEYS.has(key))
+}
+
 /** Valeur d'un paramètre avec la valeur par défaut du catalogue. */
 export function authParam(auth: AuthConfig, key: string): AuthParamValue {
   if (auth.params[key] !== undefined && auth.params[key] !== null && auth.params[key] !== '') return auth.params[key]!

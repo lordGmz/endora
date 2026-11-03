@@ -20,6 +20,7 @@ import type {
 } from '@shared/scripting/types'
 import { effectiveValue, resolveDeep, resolveString, type Scope, type Variable } from '@shared/variables'
 import { sendWithAuth } from './auth'
+import { DENY_ALL_FILES, normalizePath, type FilePolicy } from './files'
 import { executeHttp, prepareRequest, type SendOptions } from './http'
 import { t } from '@shared/i18n'
 
@@ -112,7 +113,16 @@ function toScriptResponse(result: Extract<HttpResult, { ok: true }>) {
   }
 }
 
-export async function executeRequest(input: ExecutionInput, runScripts: ScriptRunner, signal?: AbortSignal): Promise<ExecutionOutput> {
+/** Chemins des champs fichier d'une spécification form-data. */
+const filePaths = (spec: HttpRequestSpec): string[] =>
+  spec.body.mode === 'formdata' ? spec.body.fields.filter((f) => f.kind === 'file' && f.value !== '').map((f) => normalizePath(f.value)) : []
+
+export async function executeRequest(
+  input: ExecutionInput,
+  runScripts: ScriptRunner,
+  signal?: AbortSignal,
+  files: FilePolicy = DENY_ALL_FILES
+): Promise<ExecutionOutput> {
   const out: ExecutionOutput = { result: null, skipped: false, tests: [], logs: [], mutations: [], sentRequests: [] }
   const outward = [...input.chain].reverse()
   const scriptsFor = (event: 'prerequest' | 'test') => [
@@ -136,10 +146,16 @@ export async function executeRequest(input: ExecutionInput, runScripts: ScriptRu
     location: input.iteration?.location
   }
 
+  // Fichiers envoyables : ceux de la requête telle qu'enregistrée (avant tout script), et seulement
+  // s'ils ont été choisis par l'utilisateur. Un script ne peut ni ajouter un chemin ni en réutiliser
+  // un autre (pm.sendRequest ou pm.request modifiée).
+  const draftFiles = new Set(filePaths(toSpec(draftToScriptRequest(input), scopesFrom(vars), input.draft.body.language)))
+  const requestFiles: FilePolicy = (path) => draftFiles.has(normalizePath(path)) && files(path)
+
   // pm.sendRequest : sans auth ni script, avec les réglages réseau courants.
   const scriptHttp = async (req: SandboxHttpRequest): Promise<SandboxHttpResult> => {
     const spec = toSpec({ method: req.method, url: req.url, headers: req.headers, body: req.body ?? { mode: 'none' } }, scopesFrom(vars), 'text')
-    const res = await executeHttp(spec, signal, sendOptionsFrom(input.settings))
+    const res = await executeHttp(spec, signal, sendOptionsFrom(input.settings), requestFiles)
     return res.ok ? { ok: true, response: toScriptResponse(res) } : { ok: false, error: res.message }
   }
   const absorb = (o: ScriptOutcome) => {
@@ -173,7 +189,7 @@ export async function executeRequest(input: ExecutionInput, runScripts: ScriptRu
   const { auth } = effectiveAuth(input.draft.auth, input.chain.map((p) => ({ auth: p.auth, name: p.name, kind: p.kind })))
   const resolvedAuth: AuthConfig | null = auth ? { type: auth.type, params: resolveDeep(auth.params, scopes) } : null
 
-  const prepared = await prepareRequest(spec)
+  const prepared = await prepareRequest(spec, requestFiles)
   if (!prepared.ok) {
     out.result = prepared
     return out

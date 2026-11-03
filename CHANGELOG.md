@@ -7,6 +7,42 @@ release (voir [docs/PUBLICATION.md](docs/PUBLICATION.md)).
 
 ## [Non publié]
 
+### Security
+
+- **Local files protected**: a request can now only send a file that was chosen in Endora's file
+  picker. Previously, a collection script (`pm.sendRequest` or a modified `pm.request`) or an
+  imported collection could read any file on the machine (SSH keys, documents…) and upload it to a
+  third-party server. A script can no longer add a file or reuse a file chosen for another request.
+- **Scripts isolated from each other**: every script run (pre-request, post-response, mock script)
+  now happens in a fresh hidden window that is destroyed afterwards. A script can no longer leave
+  code behind to spy on later runs, such as the variables and secrets of another collection. A
+  spare window is preloaded to keep sending fast.
+- **Authorization secrets encrypted**: passwords, client secrets, tokens and private keys used in
+  authorizations are now encrypted on disk with the system keychain, in collections, history,
+  restored tabs and mock servers (as secret variables already were). Secrets in the deployed
+  version of a mock are encrypted too. Existing files are converted automatically on first launch.
+- **RAML 0.8 import**: a crafted file (`!include` followed by two spaces or a tab) can no longer
+  trigger a network request to an arbitrary address during import.
+- **OAuth 2.0**: the redirect URL must match exactly (scheme, host, port, path), and the `state`
+  parameter is now also checked for the implicit flow.
+- **Private mock servers**: the `x-mock-key` key is compared in constant time, and an empty key
+  never grants access.
+- **Dependencies**: patched versions of js-yaml, yaml, lodash, validator and fast-uri are enforced
+  for the import converters (`npm audit`: 21 → 14 alerts; the remaining ones are not reachable in
+  Endora).
+- **Continuous integration**: GitHub Actions are pinned to commit SHAs.
+
+### Changed
+
+- **File fields in imported collections**: a form-data file field coming from an imported
+  collection, or saved before this version, must be selected again; the error message says so.
+- **Public mock server**: enabling public access now asks for confirmation, and a warning stays
+  visible while the mock can be reached without a key from the local network.
+- **Settings › About**: on Linux without a keyring (GNOME Keyring, KWallet), Endora now reports that
+  secrets are only obfuscated and explains how to fix it.
+- Collection files on disk now contain their secrets encrypted, so other tools can no longer read
+  them as is; exporting from Endora still produces plain text.
+
 ## [0.4.0] — 2026-10-16
 
 ### Ajouté

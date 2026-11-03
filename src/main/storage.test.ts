@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { emptyDraft, HISTORY_LIMIT, type HistoryEntry } from '@shared/model'
+import type { MockConfig } from '@shared/mock'
 import { DEFAULT_SETTINGS } from '@shared/settings'
 import { newVariable } from '@shared/variables'
 import { WorkspaceStorage, type SecretCipher } from './storage'
@@ -113,6 +114,64 @@ describe('WorkspaceStorage', () => {
     const plain = await new WorkspaceStorage(root, null).load()
     expect(plain.environments[0]!.values[1]!.value).toBe('')
     expect(plain.warnings.some((w) => w.includes('token'))).toBe(true)
+  })
+
+  it('chiffre les secrets de la version déployée des mocks et migre un ancien mocks.json', async () => {
+    const sealed = new WorkspaceStorage(root, cipher)
+    const snapshot = { info: { name: 'C' }, item: [], variable: [{ key: 'k', value: 'mock-secret', type: 'secret' }, { key: 'p', value: 'public' }] }
+    const mock: MockConfig = {
+      id: 'm1', name: 'M', collectionId: 'c1', port: 4010, publicAccess: false, apiKey: 'cle', autoDeploy: false,
+      enableSession: true, script: '', enabled: true, createdAt: 'a', deployedAt: 'a', snapshot
+    }
+    await sealed.saveMocks([mock])
+    const raw = await readFile(join(root, 'mocks.json'), 'utf8')
+    expect(raw).not.toContain('mock-secret')
+    expect(raw).toContain('public')
+    expect((await sealed.loadMocks())[0]!.snapshot).toEqual(snapshot)
+
+    // Fichier d'une version antérieure : secret en clair, réécrit chiffré au chargement.
+    await writeFile(join(root, 'mocks.json'), JSON.stringify({ mocks: [mock] }))
+    expect((await sealed.loadMocks())[0]!.snapshot).toEqual(snapshot)
+    await sealed.flush()
+    expect(await readFile(join(root, 'mocks.json'), 'utf8')).not.toContain('mock-secret')
+  })
+
+  it('chiffre les secrets d’auth (collections, historique, session) et migre les anciens fichiers', async () => {
+    const sealed = new WorkspaceStorage(root, cipher)
+    const v21 = (type: string, entries: Record<string, string>) => ({ type, [type]: Object.entries(entries).map(([key, value]) => ({ key, value, type: 'string' })) })
+    const collection = {
+      info: { name: 'C' },
+      auth: v21('basic', { username: 'alice', password: 'mdp-collection' }),
+      item: [{ name: 'R', request: { method: 'GET', url: 'http://x', auth: v21('bearer', { token: 'jeton-requete' }) }, response: [{ originalRequest: { auth: v21('apikey', { key: 'X-Key', value: 'cle-exemple' }) } }] }]
+    }
+    const draft = { ...emptyDraft(), auth: { type: 'oauth2' as const, params: { clientId: 'app', clientSecret: 'secret-client', accessToken: 'jeton-oauth' } } }
+    await sealed.saveCollection('c1', collection)
+    await sealed.saveHistory([{ ...entry(1), request: draft }])
+    await sealed.saveSession({ tabs: [{ id: 't', draft }], activeTabId: 't' })
+
+    const disk = (await Promise.all([join(root, 'collections', 'c1.json'), join(root, 'history.json'), join(root, 'session.json')].map((f) => readFile(f, 'utf8')))).join('\n')
+    for (const secret of ['mdp-collection', 'jeton-requete', 'cle-exemple', 'secret-client', 'jeton-oauth']) expect(disk).not.toContain(secret)
+    for (const visible of ['alice', 'X-Key', '"app"']) expect(disk).toContain(visible)
+
+    const loaded = await sealed.load()
+    expect(loaded.warnings).toEqual([])
+    expect(loaded.collections[0]).toEqual(collection)
+    expect(loaded.history[0]!.request.auth).toEqual(draft.auth)
+    expect((loaded.session as unknown as { tabs: Array<{ draft: typeof draft }> }).tabs[0]!.draft.auth).toEqual(draft.auth)
+    expect(await sealed.readCollection('c1')).toEqual(collection)
+
+    // Fichiers d'une version antérieure (en clair) : lus tels quels puis réécrits chiffrés.
+    await writeFile(join(root, 'collections', 'c1.json'), JSON.stringify(collection))
+    await writeFile(join(root, 'history.json'), JSON.stringify([{ ...entry(1), request: draft }]))
+    expect((await sealed.load()).collections[0]).toEqual(collection)
+    await sealed.flush()
+    expect(await readFile(join(root, 'collections', 'c1.json'), 'utf8')).not.toContain('mdp-collection')
+    expect(await readFile(join(root, 'history.json'), 'utf8')).not.toContain('jeton-oauth')
+
+    // Sans trousseau : valeur vide et avertissement, comme pour les variables secrètes.
+    const plain = await new WorkspaceStorage(root, null).load()
+    expect((plain.collections[0] as { auth: { basic: Array<{ value: string }> } }).auth.basic[1]!.value).toBe('')
+    expect(plain.warnings.some((w) => w.includes('password'))).toBe(true)
   })
 
   it('refuse un environnement invalide et normalise des réglages corrompus', async () => {

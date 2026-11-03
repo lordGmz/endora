@@ -39,9 +39,24 @@ export type RedirectOutcome =
   | { kind: 'error'; message: string }
   | null
 
-/** Analyse une URL vers laquelle la page d'autorisation redirige ; `null` si ce n'est pas la redirection attendue. */
+/** Schéma, hôte (port compris) et chemin d'une URL, sans query ni fragment ; `null` si invalide. */
+function endpoint(raw: string): string | null {
+  try {
+    const u = new URL(raw)
+    return `${u.protocol}//${u.host}${u.pathname}`
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Analyse une URL vers laquelle la page d'autorisation redirige ; `null` si ce n'est pas la
+ * redirection attendue. Comparaison exacte du schéma, de l'hôte et du chemin : un simple préfixe
+ * accepterait `https://app/cb.evil.example/…` pour `https://app/cb`.
+ */
 export function parseRedirect(target: string, redirectUri: string): RedirectOutcome {
-  if (!redirectUri || !target.startsWith(redirectUri)) return null
+  const expected = redirectUri ? endpoint(redirectUri) : null
+  if (expected === null || endpoint(target) !== expected) return null
   const url = new URL(target)
   const params = new URLSearchParams(url.hash.startsWith('#') ? url.hash.slice(1) : '')
   for (const [k, v] of url.searchParams) if (!params.has(k)) params.set(k, v)
@@ -133,7 +148,9 @@ function authorize(auth: AuthConfig, parent: BrowserWindow | null): Promise<Redi
       const outcome = parseRedirect(target, redirectUri)
       if (!outcome) return
       event.preventDefault()
-      if (outcome.kind === 'code' && outcome.state !== state) finish({ kind: 'error', message: t('oauth.badState') })
+      // Le `state` envoyé doit revenir, pour le code comme pour le jeton implicite (RFC 6749 §4.1.2, §4.2.2).
+      const returned = outcome.kind === 'code' ? outcome.state : outcome.kind === 'token' ? outcome.params.get('state') : state
+      if (returned !== state) finish({ kind: 'error', message: t('oauth.badState') })
       else finish(outcome)
     }
     win.webContents.on('will-redirect', (e, target) => inspect(e, target))

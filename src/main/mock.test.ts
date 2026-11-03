@@ -4,7 +4,7 @@ import { exportCollection } from '@shared/collection-v21'
 import { emptyDraft, type Collection } from '@shared/model'
 import type { MockConfig, MockEvent, MockState } from '@shared/mock'
 import { runMockScript } from '@shared/scripting/mock-runtime'
-import { MockManager } from './mock'
+import { MockManager, sameKey } from './mock'
 
 const compile = (params: string[], body: string) => new Function(...params, body) as (...args: unknown[]) => unknown
 
@@ -157,5 +157,16 @@ describe('MockManager', () => {
 
   it('collection introuvable à la création', async () => {
     expect(await manager.create({ name: 'X', collectionId: 'absente', publicAccess: true, autoDeploy: true, enableSession: true })).toEqual({ ok: false, message: 'Collection not found.' })
+  })
+})
+
+describe('sameKey', () => {
+  it('compare la clé exactement et refuse une clé attendue vide', () => {
+    expect(sameKey('abc', 'abc')).toBe(true)
+    expect(sameKey('abd', 'abc')).toBe(false)
+    expect(sameKey('ab', 'abc')).toBe(false)
+    expect(sameKey(['abc'], 'abc')).toBe(false)
+    expect(sameKey(undefined, 'abc')).toBe(false)
+    expect(sameKey('', '')).toBe(false)
   })
 })

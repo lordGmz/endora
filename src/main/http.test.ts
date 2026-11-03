@@ -1,4 +1,7 @@
+import { writeFile } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { AddressInfo } from 'node:net'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { HttpRequestSpec, KeyValue } from '@shared/http'
@@ -94,6 +97,16 @@ describe('executeHttp', () => {
     )
     expect(e.body).toBe('a=b+c&d=%26')
     expect(e.headers['content-type']).toBe('application/x-www-form-urlencoded')
+  })
+
+  it('ne lit un fichier form-data que s’il est autorisé', async () => {
+    const path = join(tmpdir(), `endora-http-${process.pid}.txt`)
+    await writeFile(path, 'contenu-fichier')
+    const body = { mode: 'formdata' as const, fields: [{ ...kv('f', path), kind: 'file' as const }] }
+    expect(await executeHttp(spec({ method: 'POST', body }))).toMatchObject({ ok: false, code: 'file' })
+    expect(await executeHttp(spec({ method: 'POST', body }), undefined, {}, (p) => p !== path)).toMatchObject({ ok: false, code: 'file' })
+    const e = echo(await executeHttp(spec({ method: 'POST', body }), undefined, {}, (p) => p === path))
+    expect(e.body).toContain('contenu-fichier')
   })
 
   it('envoie un body multipart form-data', async () => {

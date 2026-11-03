@@ -521,7 +521,9 @@ function UpdateSettings() {
               </tr>
               <tr>
                 <th>{t('update.secrets')}</th>
-                <td>{info.secretsEncrypted ? t('update.secretsEncrypted') : t('update.secretsPlain')}</td>
+                <td className={info.secretsEncrypted ? undefined : 'warn-text'}>
+                  {info.secretsEncrypted ? t('update.secretsEncrypted') : info.secretsWeak ? t('update.secretsWeak') : t('update.secretsPlain')}
+                </td>
               </tr>
             </tbody>
           </table>

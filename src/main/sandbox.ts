@@ -1,10 +1,16 @@
-// Exécution des scripts utilisateur dans une fenêtre cachée isolée (même principe que la page
+// Exécution des scripts utilisateur dans des fenêtres cachées isolées (même principe que la page
 // sandbox du client de référence) :
 // - renderer Chromium sandboxé, sans Node, isolation de contexte, session dédiée ;
 // - aucun accès réseau : CSP `connect-src 'none'` et requêtes bloquées au niveau de la session
 //   (le réseau de `pm.sendRequest` passe par le process principal) ;
-// - chaque exécution dans un iframe neuf (globales propres) ;
-// - délai dépassé (boucle infinie…) : la fenêtre est détruite puis recréée à la demande.
+// - une fenêtre neuve par exécution, détruite à la fin : un script ne peut rien laisser derrière
+//   lui (globales modifiées, minuteries) pour observer les exécutions suivantes, d'une autre
+//   collection par exemple. Le code des scripts atteint toujours le domaine JavaScript de la page
+//   (les objets `pm` en viennent), d'où cette isolation par processus plutôt que par iframe ;
+// - chaque canal (`done`, `http`…) n'est accepté que de la fenêtre qui exécute ce script ;
+// - une fenêtre de réserve est préchargée pour masquer le coût de création, puis libérée après
+//   une minute sans exécution ;
+// - délai dépassé (boucle infinie…) : la fenêtre est détruite.
 
 import { join } from 'node:path'
 import { app, BrowserWindow, ipcMain, session, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
@@ -21,19 +27,29 @@ export const SANDBOX_IPC = {
   mockDone: 'sandbox:mock-done'
 } as const
 
-interface PendingMock {
-  resolve: (o: MockScriptOutput) => void
-  input: MockScriptInput
-  timer: ReturnType<typeof setTimeout>
+const PARTITION = 'endora-sandbox'
+const LOAD_TIMEOUT_MS = 15_000
+const SPARE_IDLE_MS = 60_000
+
+/** Fenêtre d'exécution, à usage unique. */
+interface Slot {
+  win: BrowserWindow
+  ready: Promise<void>
+  markReady: () => void
+}
+
+/** Exécution en cours, rattachée à la fenêtre (webContents) qui seule peut y répondre. */
+interface Pending<T> {
+  owner: number
+  finish: (result: T) => void
+  fail: (message: string) => void
+}
+
+interface PendingScript extends Pending<ScriptOutcome> {
+  sendRequest: (req: SandboxHttpRequest) => Promise<SandboxHttpResult>
 }
 
 const mockFailure = (input: MockScriptInput, error: string): MockScriptOutput => ({ ok: false, error, response: input.response, state: input.state, logs: [] })
-
-interface Pending {
-  resolve: (o: ScriptOutcome) => void
-  sendRequest: (req: SandboxHttpRequest) => Promise<SandboxHttpResult>
-  timer: ReturnType<typeof setTimeout>
-}
 
 function failure(exec: ScriptExecution, message: string): ScriptOutcome {
   return {
@@ -49,134 +65,173 @@ function failure(exec: ScriptExecution, message: string): ScriptOutcome {
 }
 
 export class ScriptSandbox {
-  private win: BrowserWindow | null = null
-  private ready: Promise<void> | null = null
-  private markReady: (() => void) | null = null
-  private readonly pending = new Map<string, Pending>()
-  private readonly pendingMock = new Map<string, PendingMock>()
+  private readonly slots = new Map<number, Slot>()
+  private spare: Slot | null = null
+  private spareTimer: ReturnType<typeof setTimeout> | null = null
+  private sessionReady = false
+  private readonly pending = new Map<string, PendingScript>()
+  private readonly pendingMock = new Map<string, Pending<MockScriptOutput>>()
 
   constructor() {
     ipcMain.on(SANDBOX_IPC.ready, (event) => {
-      if (this.isSandbox(event)) this.markReady?.()
+      this.slots.get(event.sender.id)?.markReady()
     })
     ipcMain.on(SANDBOX_IPC.done, (event: IpcMainEvent, id: string, outcome: ScriptOutcome) => {
-      if (!this.isSandbox(event)) return
       const p = this.pending.get(id)
-      if (!p) return
-      clearTimeout(p.timer)
-      this.pending.delete(id)
-      p.resolve(outcome)
+      if (p && p.owner === event.sender.id) p.finish(outcome)
     })
     ipcMain.on(SANDBOX_IPC.mockDone, (event: IpcMainEvent, id: string, output: MockScriptOutput) => {
-      if (!this.isSandbox(event)) return
       const p = this.pendingMock.get(id)
-      if (!p) return
-      clearTimeout(p.timer)
-      this.pendingMock.delete(id)
-      p.resolve(output)
+      if (p && p.owner === event.sender.id) p.finish(output)
     })
     ipcMain.handle(SANDBOX_IPC.http, async (event: IpcMainInvokeEvent, id: string, req: SandboxHttpRequest): Promise<SandboxHttpResult> => {
-      const p = this.isSandbox(event) ? this.pending.get(id) : undefined
-      if (!p) return { ok: false, error: t('sandbox.unknown') }
+      const p = this.pending.get(id)
+      if (!p || p.owner !== event.sender.id) return { ok: false, error: t('sandbox.unknown') }
       return p.sendRequest(req)
     })
   }
 
-  /** Identifie les messages venant de la fenêtre sandbox (et d'elle seule). */
-  isSandbox(event: { sender: Electron.WebContents }): boolean {
-    return this.win !== null && !this.win.isDestroyed() && event.sender.id === this.win.webContents.id
-  }
-
-  get webContentsId(): number | null {
-    return this.win && !this.win.isDestroyed() ? this.win.webContents.id : null
-  }
-
-  private ensure(): Promise<void> {
-    if (this.win && !this.win.isDestroyed() && this.ready) return this.ready
-    const ses = session.fromPartition('endora-sandbox')
+  /** Session commune aux fenêtres d'exécution : seuls les fichiers de l'app (ou le serveur de dev) se chargent. */
+  private sandboxSession(): Electron.Session {
+    const ses = session.fromPartition(PARTITION)
+    if (this.sessionReady) return ses
     const devUrl = process.env['ELECTRON_RENDERER_URL']
-    // Seuls les fichiers de l'app (ou le serveur de dev) peuvent être chargés.
     ses.webRequest.onBeforeRequest((details, callback) => {
       const allowed = details.url.startsWith('file://') || (devUrl !== undefined && details.url.startsWith(devUrl)) || details.url === 'about:blank'
       callback({ cancel: !allowed })
     })
     ses.setPermissionRequestHandler((_wc, _perm, callback) => callback(false))
+    this.sessionReady = true
+    return ses
+  }
 
-    this.win = new BrowserWindow({
+  private create(): Slot {
+    const win = new BrowserWindow({
       show: false,
       webPreferences: {
         preload: join(import.meta.dirname, '../preload/sandbox.cjs'),
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
-        session: ses,
+        session: this.sandboxSession(),
         backgroundThrottling: false,
         devTools: !app.isPackaged,
         spellcheck: false
       }
     })
-    this.win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-    this.win.webContents.on('will-navigate', (e) => e.preventDefault())
-    this.win.webContents.on('render-process-gone', () => this.reset(t('sandbox.crashed')))
-    this.ready = new Promise((resolve) => {
-      this.markReady = resolve
+    const id = win.webContents.id
+    let markReady: () => void = () => undefined
+    const ready = new Promise<void>((resolve) => {
+      markReady = resolve
     })
-    if (devUrl) void this.win.loadURL(`${devUrl}/sandbox.html`)
-    else void this.win.loadFile(join(import.meta.dirname, '../renderer/sandbox.html'))
-    return this.ready
+    const slot: Slot = { win, ready, markReady }
+    this.slots.set(id, slot)
+    win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    win.webContents.on('will-navigate', (e) => e.preventDefault())
+    win.webContents.on('render-process-gone', () => {
+      this.failOwnedBy(id, t('sandbox.crashed'))
+      this.release(slot)
+    })
+    win.on('closed', () => {
+      this.slots.delete(id)
+      if (this.spare === slot) this.spare = null
+    })
+    const devUrl = process.env['ELECTRON_RENDERER_URL']
+    if (devUrl) void win.loadURL(`${devUrl}/sandbox.html`)
+    else void win.loadFile(join(import.meta.dirname, '../renderer/sandbox.html'))
+    return slot
   }
 
-  /** Détruit la fenêtre (délai dépassé ou plantage) ; les exécutions en cours échouent. */
-  private reset(message: string): void {
-    const win = this.win
-    this.win = null
-    this.ready = null
-    for (const [id, p] of this.pending) {
-      clearTimeout(p.timer)
-      this.pending.delete(id)
-      p.resolve({ ok: false, error: { message, source: 'Script' }, request: { method: 'GET', url: '', headers: [], body: { mode: 'none' } }, mutations: [], tests: [], logs: [], skipRequest: false, sentRequests: [] })
+  /** Détruit une fenêtre d'exécution (fin, délai dépassé, plantage). */
+  private release(slot: Slot): void {
+    this.slots.delete(slot.win.webContents.id)
+    if (this.spare === slot) this.spare = null
+    if (!slot.win.isDestroyed()) slot.win.destroy()
+  }
+
+  /** Fenêtre prête à exécuter un script ; une nouvelle réserve est préparée pour la suivante. */
+  private async acquire(): Promise<Slot | null> {
+    const slot = this.spare && !this.spare.win.isDestroyed() ? this.spare : this.create()
+    this.spare = null
+    const loaded = await Promise.race([slot.ready.then(() => true), new Promise<boolean>((r) => setTimeout(() => r(false), LOAD_TIMEOUT_MS))])
+    if (!loaded || slot.win.isDestroyed()) {
+      this.release(slot)
+      return null
     }
-    for (const [id, p] of this.pendingMock) {
-      clearTimeout(p.timer)
-      this.pendingMock.delete(id)
-      p.resolve(mockFailure(p.input, message))
-    }
-    if (win && !win.isDestroyed()) win.destroy()
+    this.prepareSpare()
+    return slot
+  }
+
+  private prepareSpare(): void {
+    if (!this.spare || this.spare.win.isDestroyed()) this.spare = this.create()
+    if (this.spareTimer) clearTimeout(this.spareTimer)
+    this.spareTimer = setTimeout(() => {
+      this.spareTimer = null
+      if (this.spare) this.release(this.spare)
+    }, SPARE_IDLE_MS)
+  }
+
+  private failOwnedBy(owner: number, message: string): void {
+    for (const p of [...this.pending.values(), ...this.pendingMock.values()]) if (p.owner === owner) p.fail(message)
+  }
+
+  /** Exécute un travail dans une fenêtre neuve, détruite dès qu'il se termine (ou échoue). */
+  private async execute<T, P extends Pending<T>>(
+    id: string,
+    map: Map<string, P>,
+    entry: (base: Pending<T>) => P,
+    onFailure: (message: string) => T,
+    timeoutMs: number,
+    start: (win: BrowserWindow) => void
+  ): Promise<T> {
+    const slot = await this.acquire()
+    if (!slot) return onFailure(t('sandbox.unavailable'))
+    return new Promise<T>((resolve) => {
+      let settled = false
+      const finish = (result: T) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        if (map.get(id)?.owner === slot.win.webContents.id) map.delete(id)
+        this.release(slot)
+        resolve(result)
+      }
+      // Une boucle infinie bloque la fenêtre : seule sa destruction l'arrête.
+      const timer = setTimeout(() => finish(onFailure(t('sandbox.timeout', { seconds: Math.round(timeoutMs / 1000) }))), timeoutMs)
+      map.set(id, entry({ owner: slot.win.webContents.id, finish, fail: (message) => finish(onFailure(message)) }))
+      start(slot.win)
+    })
   }
 
   /** Script d'un mock server : même isolation que les scripts de requêtes, sans réseau. */
-  async runMock(input: MockScriptInput, timeoutMs: number): Promise<MockScriptOutput> {
-    await this.ensure()
-    const win = this.win
-    if (!win || win.isDestroyed()) return mockFailure(input, t('sandbox.unavailable'))
-    return new Promise<MockScriptOutput>((resolve) => {
-      const timer = setTimeout(() => {
-        this.pendingMock.delete(input.id)
-        resolve(mockFailure(input, t('sandbox.timeout', { seconds: Math.round(timeoutMs / 1000) })))
-        this.reset(t('sandbox.interrupted'))
-      }, timeoutMs)
-      this.pendingMock.set(input.id, { resolve, input, timer })
-      win.webContents.send(SANDBOX_IPC.mockRun, { ...input, locale: getLocale() })
-    })
+  runMock(input: MockScriptInput, timeoutMs: number): Promise<MockScriptOutput> {
+    return this.execute(
+      input.id,
+      this.pendingMock,
+      (base) => base,
+      (message) => mockFailure(input, message),
+      timeoutMs,
+      (win) => win.webContents.send(SANDBOX_IPC.mockRun, { ...input, locale: getLocale() })
+    )
   }
 
-  async run(exec: ScriptExecution, sendRequest: Pending['sendRequest'], timeoutMs: number): Promise<ScriptOutcome> {
-    await this.ensure()
-    const win = this.win
-    if (!win || win.isDestroyed()) return failure(exec, t('sandbox.unavailable'))
-    return new Promise<ScriptOutcome>((resolve) => {
-      const timer = setTimeout(() => {
-        // Une boucle infinie bloque la fenêtre : seule sa destruction l'arrête.
-        this.pending.delete(exec.id)
-        resolve(failure(exec, t('sandbox.timeout', { seconds: Math.round(timeoutMs / 1000) })))
-        this.reset(t('sandbox.interrupted'))
-      }, timeoutMs)
-      this.pending.set(exec.id, { resolve, sendRequest, timer })
-      win.webContents.send(SANDBOX_IPC.run, { ...exec, locale: getLocale() })
-    })
+  run(exec: ScriptExecution, sendRequest: PendingScript['sendRequest'], timeoutMs: number): Promise<ScriptOutcome> {
+    return this.execute(
+      exec.id,
+      this.pending,
+      (base) => ({ ...base, sendRequest }),
+      (message) => failure(exec, message),
+      timeoutMs,
+      (win) => win.webContents.send(SANDBOX_IPC.run, { ...exec, locale: getLocale() })
+    )
   }
 
+  /** Ferme toutes les fenêtres ; les exécutions en cours échouent. */
   dispose(): void {
-    this.reset(t('sandbox.closed'))
+    for (const p of [...this.pending.values(), ...this.pendingMock.values()]) p.fail(t('sandbox.closed'))
+    if (this.spareTimer) clearTimeout(this.spareTimer)
+    this.spareTimer = null
+    for (const slot of [...this.slots.values()]) this.release(slot)
+    this.spare = null
   }
 }

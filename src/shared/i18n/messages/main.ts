@@ -90,6 +90,7 @@ export const en = {
   'oauth.noTokenUrl': 'Access Token URL missing.',
   'oauth.noRedirectUrl': 'Callback URL missing.',
   'http.fileUnreadable': (p) => `Unreadable file for “${p['key']}”: ${p['reason']}`,
+  'http.fileNotAllowed': (p) => `File “${p['name']}” for “${p['key']}” was not chosen in Endora: select it again with the file picker.`,
   'curl.notCurl': 'The text is not a cURL command.',
   'auth.notJsonObject': (p) => `“${p['key']}” must be a JSON object`,
   'script.noModule': (p) => `Module “${p['name']}” is not available in the Endora sandbox.`
@@ -183,6 +184,7 @@ export const fr: Translation<typeof en> = {
   'oauth.noTokenUrl': 'Access Token URL manquante.',
   'oauth.noRedirectUrl': 'Callback URL manquante.',
   'http.fileUnreadable': (p) => `Fichier illisible pour « ${p['key']} » : ${p['reason']}`,
+  'http.fileNotAllowed': (p) => `Le fichier « ${p['name']} » de « ${p['key']} » n'a pas été choisi dans Endora : sélectionnez-le à nouveau avec le sélecteur de fichier.`,
   'curl.notCurl': 'Le texte n’est pas une commande cURL.',
   'auth.notJsonObject': (p) => `« ${p['key']} » doit être un objet JSON`,
   'script.noModule': (p) => `Le module « ${p['name']} » n’est pas disponible dans le sandbox Endora.`

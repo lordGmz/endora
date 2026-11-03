@@ -113,6 +113,8 @@ export interface AppInfo {
   platform: string
   /** Les secrets sont chiffrés par le trousseau du système. */
   secretsEncrypted: boolean
+  /** Linux sans trousseau (backend `basic_text`) : secrets seulement masqués par une clé fixe. */
+  secretsWeak?: boolean
 }
 
 export interface EndoraApi {

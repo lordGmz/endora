@@ -4,6 +4,7 @@ import { Agent, Client, FormData, H2CClient, request, Response, type Dispatcher 
 import { buildUrl, rawContentType, type HttpErrorResult, type HttpRequestSpec, type HttpResult } from '@shared/http'
 import type { ProtocolVersion } from '@shared/model'
 import { t } from '@shared/i18n'
+import { DENY_ALL_FILES, type FilePolicy } from './files'
 
 /** Requête prête à partir : c'est sur elle que l'auth signe (URL, en-têtes et body définitifs). */
 export interface PreparedRequest {
@@ -55,8 +56,11 @@ export function removeHeader(headers: Array<[string, string]>, name: string): Ar
 
 const fail = (code: HttpErrorResult['code'], message: string, timeMs = 0): HttpErrorResult => ({ ok: false, code, message, timeMs })
 
-/** Construit la requête finale (URL, en-têtes, body sérialisé). */
-export async function prepareRequest(spec: HttpRequestSpec): Promise<{ ok: true; prepared: PreparedRequest } | HttpErrorResult> {
+/**
+ * Construit la requête finale (URL, en-têtes, body sérialisé). Les fichiers form-data ne sont lus
+ * que si `files` les autorise (choisis par l'utilisateur, voir ./files).
+ */
+export async function prepareRequest(spec: HttpRequestSpec, files: FilePolicy = DENY_ALL_FILES): Promise<{ ok: true; prepared: PreparedRequest } | HttpErrorResult> {
   let url: URL
   try {
     url = buildUrl(spec.url, spec.params)
@@ -92,6 +96,7 @@ export async function prepareRequest(spec: HttpRequestSpec): Promise<{ ok: true;
           form.append(f.key, f.value)
           continue
         }
+        if (!files(f.value)) return fail('file', t('http.fileNotAllowed', { key: f.key, name: basename(f.value) }))
         try {
           form.append(f.key, new Blob([await readFile(f.value)]), basename(f.value))
         } catch (err) {
@@ -218,8 +223,8 @@ export async function sendPrepared(p: PreparedRequest, opts: SendOptions = DEFAU
 }
 
 /** Exécute une requête HTTP dans le process principal. Ne lève jamais : les échecs attendus sont des résultats. */
-export async function executeHttp(spec: HttpRequestSpec, signal?: AbortSignal, opts: Partial<SendOptions> = {}): Promise<HttpResult> {
-  const prepared = await prepareRequest(spec)
+export async function executeHttp(spec: HttpRequestSpec, signal?: AbortSignal, opts: Partial<SendOptions> = {}, files: FilePolicy = DENY_ALL_FILES): Promise<HttpResult> {
+  const prepared = await prepareRequest(spec, files)
   if (!prepared.ok) return prepared
   return sendPrepared(prepared.prepared, { ...DEFAULT_SEND_OPTIONS, timeoutMs: spec.timeoutMs ?? DEFAULT_SEND_OPTIONS.timeoutMs, ...opts, signal })
 }

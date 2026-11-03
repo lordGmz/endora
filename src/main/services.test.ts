@@ -89,6 +89,17 @@ describe('OAuth 2.0', () => {
     expect(parseRedirect('https://localhost/cb?error=access_denied', 'https://localhost/cb')).toEqual({ kind: 'error', message: 'access_denied' })
     expect(parseRedirect('https://idp/login', 'https://localhost/cb')).toBeNull()
   })
+
+  it('n’accepte que la redirection exacte (schéma, hôte, port, chemin)', () => {
+    expect(parseRedirect('https://localhost/cb.evil.example/x?code=abc', 'https://localhost/cb')).toBeNull()
+    expect(parseRedirect('https://localhost/cbx?code=abc', 'https://localhost/cb')).toBeNull()
+    expect(parseRedirect('https://localhost:8443/cb?code=abc', 'https://localhost/cb')).toBeNull()
+    expect(parseRedirect('http://localhost/cb?code=abc', 'https://localhost/cb')).toBeNull()
+    expect(parseRedirect('https://localhost/cb/?code=abc', 'https://localhost/cb')).toBeNull()
+    expect(parseRedirect('https://localhost/cb?code=abc&state=s', 'https://localhost/cb?app=1')).toMatchObject({ kind: 'code', code: 'abc' })
+    expect(parseRedirect('myapp://callback?code=abc', 'myapp://callback')).toMatchObject({ kind: 'code', code: 'abc' })
+    expect(parseRedirect('https://localhost/cb?code=abc', 'pas une url')).toBeNull()
+  })
 })
 
 describe('mises à jour', () => {
